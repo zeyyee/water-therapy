@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WATER THERAPY</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500&family=Instrument+Sans:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="site-header">
+        <p class="brand">WATER THERAPY</p>
+        <h1>물소리를 들으며 잠시 쉬어가요.</h1>
+        <p class="lede">물소리를 듣고 이 순간에 머무르세요. 가만히 바라보기만 해도 괜찮아요.</p>
+      </header>
+
+      <main class="workspace">
+        <section class="visual-panel" aria-label="자연환경 감상 영역">
+          <div
+            id="water-canvas"
+            class="canvas-host"
+            role="img"
+            aria-label="이끼와 나뭇잎 사이로 개울이 흐르는 화면"
+          >
+            <p id="canvas-fallback" class="fallback">
+              화면을 불러오지 못했습니다. 연결을 확인한 뒤 다시 열어 주세요.
+            </p>
+          </div>
+          <p class="visual-note"><span aria-hidden="true"></span>BUBBLE에서 화면을 누르면 파문이 퍼져요</p>
+        </section>
+
+        <aside class="control-panel" aria-label="테마와 휴식 설정">
+          <section class="control-section">
+            <div class="section-heading">
+              <h2>머물 공간</h2>
+              <span id="theme-now">숲속 계곡</span>
+            </div>
+            <div class="themes" role="radiogroup" aria-label="자연환경 선택">
+              <button type="button" class="theme-btn" role="radio" data-theme="forest" aria-checked="true" tabindex="0">
+                <span class="theme-name">FOREST</span>
+                <span class="theme-caption">숲속 계곡</span>
+              </button>
+              <button type="button" class="theme-btn" role="radio" data-theme="flow" aria-checked="false" tabindex="-1">
+                <span class="theme-name">BUBBLE</span>
+                <span class="theme-caption">물방울</span>
+              </button>
+              <button type="button" class="theme-btn" role="radio" data-theme="underwater" aria-checked="false" tabindex="-1">
+                <span class="theme-name">UNDERWATER</span>
+                <span class="theme-caption">깊은 바닷속</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="control-section">
+            <div class="section-heading">
+              <h2>머무는 시간</h2>
+              <span id="time-readout">자유롭게</span>
+            </div>
+            <div class="duration-options" role="radiogroup" aria-label="머무는 시간 선택">
+              <button type="button" class="duration-btn" role="radio" data-minutes="0" aria-checked="true" tabindex="0">∞</button>
+              <button type="button" class="duration-btn" role="radio" data-minutes="5" aria-checked="false" tabindex="-1">5분</button>
+              <button type="button" class="duration-btn" role="radio" data-minutes="10" aria-checked="false" tabindex="-1">10분</button>
+              <button type="button" class="duration-btn" role="radio" data-minutes="20" aria-checked="false" tabindex="-1">20분</button>
+            </div>
+            <p class="section-help">시간이 끝나면 소리가 천천히 잦아들어요.</p>
+          </section>
+
+          <section class="control-section volume-section">
+            <div class="section-heading">
+              <h2>음량</h2>
+              <span class="num"><span id="volume-value">70</span>%</span>
+            </div>
+            <div class="volume">
+              <label class="visually-hidden" for="volume">음량</label>
+              <input id="volume" type="range" min="0" max="100" value="70" />
+            </div>
+          </section>
+
+          <section class="session-actions" aria-label="휴식 재생">
+            <button id="play" class="btn btn-primary" type="button" aria-pressed="false">
+              <svg class="icon icon-play" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 6.5v11l10-5.5-10-5.5z" />
+              </svg>
+              <svg class="icon icon-pause" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M8 6.5v11M16 6.5v11" />
+              </svg>
+              <span id="play-label">휴식 시작하기</span>
+            </button>
+            <button id="reset" class="btn btn-secondary" type="button">처음으로</button>
+          </section>
+
+          <p id="session-status" class="session-status" aria-live="polite">물소리와 함께 천천히 쉬어가세요.</p>
+          <p id="theme-status" class="visually-hidden" aria-live="polite"></p>
+          <p id="audio-status" class="audio-status" role="status" aria-live="polite"></p>
+        </aside>
+      </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js" defer></script>
+    <script src="sketch.js" defer></script>
+    <script src="ui.js" defer></script>
+  </body>
+</html>
