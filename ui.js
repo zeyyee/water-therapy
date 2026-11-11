@@ -23,6 +23,7 @@ const audioState = {
   selected: "lake",
   target: null,
   isPlaying: false,
+  isStarting: false,
   isMuted: false,
   volume: 70,
   generation: 0,
@@ -43,16 +44,27 @@ const backButton = document.querySelector("#back");
 const volumeInput = document.querySelector("#volume");
 const volumeValue = document.querySelector("#volume-value");
 const fallback = document.querySelector("#canvas-fallback");
+const audioGains = Object.create(null);
+const audioSources = Object.create(null);
+let audioContext = null;
 
 const audioTracks = Object.fromEntries(
   Object.values(SOUNDS).map((sound) => {
     const audio = new Audio(sound.source);
     audio.loop = true;
-    audio.preload = "none";
-    audio.volume = 0;
+    audio.preload = "metadata";
+    audio.playsInline = true;
+    audio.setAttribute("playsinline", "");
+    audio.setAttribute("webkit-playsinline", "");
     audio.addEventListener("error", () => {
       if (audio.dataset.requested === "true") {
-        showAudioError(`${sound.label} 사운드를 불러오지 못했습니다. 연결 상태와 파일을 확인해 주세요.`);
+        const mediaError = audio.error;
+        const cause = mediaError?.code === 2
+          ? "네트워크 연결과 서버의 MP3 응답 및 HTTP Range(206) 지원을 확인해 주세요."
+          : mediaError?.code === 3
+            ? "오디오 파일을 해석하지 못했습니다. MP3 파일을 확인해 주세요."
+            : "파일 경로와 서버의 오디오 응답을 확인해 주세요.";
+        showAudioError(`${sound.label} 사운드를 불러오지 못했습니다. ${cause}`);
       }
     });
     return [sound.id, audio];
@@ -67,6 +79,68 @@ function showAudioError(message) {
 function clearAudioError() {
   audioStatus.textContent = "";
   audioStatus.classList.remove("is-visible");
+}
+
+function initializeAudioGraph() {
+  const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextConstructor) {
+    throw new Error("이 브라우저에서 Web Audio를 사용할 수 없습니다. Safari를 최신 버전으로 업데이트해 주세요.");
+  }
+
+  if (navigator.audioSession && "type" in navigator.audioSession) {
+    try {
+      navigator.audioSession.type = "playback";
+    } catch {
+      // The Audio Session API is optional and varies by iOS version.
+    }
+  }
+
+  if (!audioContext) audioContext = new AudioContextConstructor();
+  if (audioContext.state === "closed") {
+    throw new Error("오디오 연결이 종료되었습니다. 페이지를 새로고침한 뒤 다시 눌러 주세요.");
+  }
+
+  Object.entries(audioTracks).forEach(([id, audio]) => {
+    if (audioGains[id]) return;
+    const source = audioContext.createMediaElementSource(audio);
+    const gain = audioContext.createGain();
+    gain.gain.value = 0;
+    source.connect(gain);
+    gain.connect(audioContext.destination);
+    audioSources[id] = source;
+    audioGains[id] = gain;
+  });
+
+  return audioContext;
+}
+
+function describePlaybackError(error) {
+  if (error?.name === "NotAllowedError") {
+    return "Safari가 재생을 차단했습니다. 페이지 안의 소리 듣기 버튼을 다시 눌러 주세요.";
+  }
+  if (error?.name === "NotSupportedError") {
+    return "이 오디오 파일을 재생할 수 없습니다. MP3 경로와 파일 형식을 확인해 주세요.";
+  }
+  if (error?.name === "SecurityError") {
+    return "안전한 HTTPS 연결에서 페이지를 열어 주세요.";
+  }
+  return error?.message || "오디오를 시작하지 못했습니다. 연결 상태와 파일을 확인해 주세요.";
+}
+
+function failPlayback(error, generation) {
+  if (generation !== audioState.generation) return Promise.resolve();
+  if (audioState.fadeFrame) cancelAnimationFrame(audioState.fadeFrame);
+  audioState.fadeFrame = 0;
+  audioState.isPlaying = false;
+  audioState.target = null;
+  Object.entries(audioTracks).forEach(([id, audio]) => {
+    audio.pause();
+    if (audioGains[id]) audioGains[id].gain.value = 0;
+  });
+  updatePlaybackControl();
+  showAudioError(describePlaybackError(error));
+  waterStatus.textContent = "재생에 실패했어요. 안내를 확인한 뒤 다시 눌러 주세요.";
+  return Promise.resolve();
 }
 
 function selectSound(id) {
@@ -111,6 +185,7 @@ backButton.addEventListener("click", () => {
 });
 
 playButton.addEventListener("click", () => {
+  if (audioState.isStarting) return;
   if (audioState.isPlaying) {
     pauseAudio();
     waterStatus.textContent = "물소리를 잠시 멈췄어요.";
@@ -118,10 +193,10 @@ playButton.addEventListener("click", () => {
   }
 
   audioState.isPlaying = true;
+  audioState.isStarting = true;
   updatePlaybackControl();
-  playButton.disabled = true;
   transitionAudio(audioState.selected).finally(() => {
-    playButton.disabled = false;
+    audioState.isStarting = false;
   });
 });
 
@@ -142,22 +217,35 @@ function transitionAudio(soundId, duration = 1500) {
   Object.entries(audioTracks).forEach(([id, audio]) => {
     if (id !== soundId && id !== previousTarget && !audio.paused) {
       audio.pause();
-      audio.volume = 0;
+      if (audioGains[id]) audioGains[id].gain.value = 0;
     }
   });
 
   target.dataset.requested = "true";
   target.loop = true;
-  const started = target.paused ? target.play() : Promise.resolve();
+  let started;
+  try {
+    // Keep context creation, source routing, resume(), and play() in the same
+    // synchronous user-gesture call stack for iOS Safari.
+    const context = initializeAudioGraph();
+    const resumePromise = context.state === "running" ? Promise.resolve() : context.resume();
+    const playPromise = target.paused ? target.play() : Promise.resolve();
+    started = Promise.all([resumePromise, playPromise]);
+  } catch (error) {
+    return failPlayback(error, generation);
+  }
 
   return started.then(() => {
+    if (audioContext.state !== "running") {
+      throw new Error("Safari 오디오가 준비되지 않았습니다. 소리 듣기를 다시 눌러 주세요.");
+    }
     if (generation !== audioState.generation || !audioState.isPlaying || audioState.selected !== soundId) {
       if (!audioState.isPlaying || audioState.selected !== soundId || audioState.target !== soundId) target.pause();
       return;
     }
 
-    const tracks = Object.entries(audioTracks);
-    const startingVolumes = new Map(tracks.map(([id, audio]) => [id, audio.volume]));
+    const gains = Object.entries(audioGains);
+    const startingVolumes = new Map(gains.map(([id, gain]) => [id, gain.gain.value]));
     const startedAt = performance.now();
 
     const fade = (now) => {
@@ -166,10 +254,10 @@ function transitionAudio(soundId, duration = 1500) {
       const eased = progress * progress * (3 - 2 * progress);
       const targetVolume = audioState.isMuted ? 0 : audioState.volume / 100;
 
-      tracks.forEach(([id, audio]) => {
+      gains.forEach(([id, gain]) => {
         const endVolume = id === soundId ? targetVolume : 0;
         const startVolume = startingVolumes.get(id);
-        audio.volume = Math.max(0, Math.min(1, startVolume + (endVolume - startVolume) * eased));
+        gain.gain.value = Math.max(0, Math.min(1, startVolume + (endVolume - startVolume) * eased));
       });
 
       if (progress < 1) {
@@ -177,7 +265,7 @@ function transitionAudio(soundId, duration = 1500) {
         return;
       }
 
-      tracks.forEach(([id, audio]) => {
+      Object.entries(audioTracks).forEach(([id, audio]) => {
         if (id !== soundId) audio.pause();
       });
       audioState.fadeFrame = 0;
@@ -186,39 +274,27 @@ function transitionAudio(soundId, duration = 1500) {
     };
 
     audioState.fadeFrame = requestAnimationFrame(fade);
-  }).catch((error) => {
-    if (generation !== audioState.generation) return;
-    if (audioState.fadeFrame) cancelAnimationFrame(audioState.fadeFrame);
-    audioState.fadeFrame = 0;
-    audioState.isPlaying = false;
-    audioState.target = null;
-    Object.values(audioTracks).forEach((audio) => {
-      audio.pause();
-      audio.volume = 0;
-    });
-    updatePlaybackControl();
-    showAudioError(error.message || "물소리를 재생하지 못했습니다. 다시 시도해 주세요.");
-    waterStatus.textContent = "재생에 실패했어요. 다시 시도해 주세요.";
-  });
+  }).catch((error) => failPlayback(error, generation));
 }
 
 function pauseAudio() {
   audioState.isPlaying = false;
+  audioState.isStarting = false;
   audioState.generation += 1;
   updatePlaybackControl();
   if (audioState.fadeFrame) cancelAnimationFrame(audioState.fadeFrame);
 
   const generation = audioState.generation;
-  const tracks = Object.values(audioTracks);
-  const startingVolumes = tracks.map((audio) => audio.volume);
+  const gains = Object.entries(audioGains);
+  const startingVolumes = gains.map(([, gain]) => gain.gain.value);
   const startedAt = performance.now();
   const duration = 180;
 
   const fadeOut = (now) => {
     if (generation !== audioState.generation) return;
     const progress = Math.min(1, (now - startedAt) / duration);
-    tracks.forEach((audio, index) => {
-      audio.volume = startingVolumes[index] * (1 - progress);
+    gains.forEach(([, gain], index) => {
+      gain.gain.value = startingVolumes[index] * (1 - progress);
     });
     if (progress < 1) {
       audioState.fadeFrame = requestAnimationFrame(fadeOut);
@@ -237,8 +313,8 @@ muteButton.addEventListener("click", () => {
   muteButton.setAttribute("aria-pressed", String(audioState.isMuted));
   muteButton.setAttribute("aria-label", audioState.isMuted ? "음소거 해제" : "음소거");
   if (audioState.isPlaying && !audioState.fadeFrame) {
-    const activeTrack = audioTracks[audioState.target];
-    if (activeTrack) activeTrack.volume = audioState.isMuted ? 0 : audioState.volume / 100;
+    const activeGain = audioGains[audioState.target || audioState.selected];
+    if (activeGain) activeGain.gain.value = audioState.isMuted ? 0 : audioState.volume / 100;
   }
   waterStatus.textContent = audioState.isMuted ? "물소리를 음소거했어요." : "물소리 음소거를 해제했어요.";
 });
@@ -251,7 +327,8 @@ function syncVolume() {
 
   const activeTrack = audioTracks[audioState.target || audioState.selected];
   if (audioState.isPlaying && !audioState.isMuted && activeTrack && !activeTrack.paused) {
-    activeTrack.volume = audioState.volume / 100;
+    const activeGain = audioGains[audioState.target || audioState.selected];
+    if (activeGain) activeGain.gain.value = audioState.volume / 100;
   }
 }
 

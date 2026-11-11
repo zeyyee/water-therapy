@@ -59,7 +59,6 @@ const waterTherapySketch = (p) => {
   p.mouseMoved = () => {
     rememberPointer(p.mouseX, p.mouseY);
     if (performance.now() - lastTouchAt > 500) addTrailRipple(p.mouseX, p.mouseY, 0.34);
-    return false;
   };
 
   p.mousePressed = () => {
@@ -73,24 +72,21 @@ const waterTherapySketch = (p) => {
         addRipple(p.mouseX, p.mouseY, 1);
       }
     }
-    return false;
   };
 
   p.mouseDragged = () => {
     rememberPointer(p.mouseX, p.mouseY);
     if (performance.now() - lastTouchAt > 500) movePointer(p.mouseX, p.mouseY);
-    return false;
   };
 
   p.mouseReleased = () => {
     releaseLeaf();
-    return false;
   };
 
   p.touchStarted = () => {
     lastTouchAt = performance.now();
     const touch = p.touches && p.touches[0];
-    if (!touch) return false;
+    if (!touch) return;
     rememberPointer(touch.x, touch.y);
     draggedLeaf = mode === "river" ? findLeaf(touch.x, touch.y) : null;
     if (draggedLeaf) {
@@ -99,7 +95,6 @@ const waterTherapySketch = (p) => {
     } else {
       addRipple(touch.x, touch.y, 1);
     }
-    return false;
   };
 
   p.touchMoved = () => {
@@ -109,12 +104,10 @@ const waterTherapySketch = (p) => {
       rememberPointer(touch.x, touch.y);
       movePointer(touch.x, touch.y);
     }
-    return false;
   };
 
   p.touchEnded = () => {
     releaseLeaf();
-    return false;
   };
 
   function initializeWaterDetails() {
